@@ -1,0 +1,6 @@
+[submodule "deps/c-logger"]
+	path = deps/c-logger
+	url = https://github.com/masamonoke/c-logger
+[submodule "deps/networking"]
+	path = deps/networking
+	url = https://github.com/masamonoke/libnetworking
