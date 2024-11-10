@@ -20,6 +20,7 @@ add_executable(cchatroom-server
 
 add_library(cchatroom-common
 	common/control.c
+	common/packet.c
 )
 
 target_link_libraries(cchatroom-common c-logger)

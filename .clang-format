@@ -10,7 +10,6 @@ AlwaysBreakBeforeMultilineStrings: false
 
 BreakBeforeBraces: Attach
 
-IndentAccessModifiers: true
 IndentWidth: 4
 TabWidth: 4
 UseTab: ForIndentation

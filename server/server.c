@@ -1,6 +1,9 @@
 #include "networking/server.h"
+#include "networking/socket.h"
 #include "clog.h"
 #include "shared.h"
+#include "packet.h"
+#include "control.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -19,15 +22,15 @@ static void int_handler(int dummy) {
 enum constants { MAX_CLIENTS = 100 };
 
 struct user {
-		int         fd;
-		const char* username;
-		const char* msg[10];
+	int         fd;
+	const char* username;
+	const char* msg[10];
 };
 
 struct server_data {
-		struct user clients[MAX_CLIENTS];
-		uint8_t     capacity;
-		uint8_t     size;
+	struct user clients[MAX_CLIENTS];
+	uint8_t     capacity;
+	uint8_t     size;
 };
 
 static void init_user(struct user* usr) {
@@ -90,7 +93,7 @@ static bool replace_disconnected(struct server_data* dat, int client_fd) {
 	uint8_t i;
 
 	for (i = 0; i < dat->size; i++) {
-		if (is_disconnected(dat->clients[i].fd)) {
+		if (dat->clients[i].fd == -1 || is_disconnected(dat->clients[i].fd)) {
 			dat->clients[i].fd = client_fd;
 			return true;
 		}
@@ -114,6 +117,20 @@ static bool insert(struct server_data* dat, int client_fd) {
 	return true;
 }
 
+static bool delete_client(struct server_data* dat, int client_fd) {
+	for (int i = 0; i < dat->size; i++) {
+		if (dat->clients[i].fd == client_fd) {
+			log_debug("Deleted client fd=%d", client_fd);
+			shutdown(dat->clients[i].fd, SHUT_RDWR);
+			close(dat->clients[i].fd);
+			dat->clients[i].fd = -1;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static void prepend_string(const char* prefix, char* dst) {
 	size_t len = strlen(prefix);
 	memmove(dst + len, dst, strlen(dst) + 1);
@@ -123,45 +140,68 @@ static void prepend_string(const char* prefix, char* dst) {
 // Returning false means disconnection
 static bool callback(int client_fd, void* data) {
 	struct server_data* dat;
-	char                buf[100];
-	ssize_t             recevied;
 	struct pollfd       pfd = { .fd = client_fd, .events = POLLIN };
 	int                 poll_ret;
 
 	// rename to server
 	dat = (struct server_data*)data;
 	insert(dat, client_fd);
+	char ip[128];
+	networking_socket_get_remote_ip(client_fd, ip);
+	log_info("Got connection from %s", ip);
 
 	while (not_interrupted) {
 		poll_ret = poll(&pfd, 1, 5000);
 		if (poll_ret < 0) {
-			return false;
+			break;
 		}
 
 		if (pfd.revents & POLLIN) {
-			// check if this client is in server lists
-			// if not then add it to
-			recevied = recv(client_fd, buf, sizeof(buf), 0);
-			if (recevied < 0) {
-				if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			uint8_t packet[MAX_PACKET_SIZE];
+			uint8_t size;
+			enum packet_status res = recv_packet(packet, &size, client_fd);
+			switch (res) {
+				case PACKET_SIZE_LIMIT_EXCEED:
+					log_warn("Client sent too big packet");
+					break;
+				case PACKET_TRY_AGAIN:
+					log_debug("Some temporary resource shortage happend. Trying to read packet again");
 					continue;
-				}
-				// TODO: log some additional data for client
-				log_error("client disconnected");
-				return false;
-			}
-			if (recevied > 0) {
-				// before sending append client username like client_username: buf
-				buf[recevied] = 0;
-				prepend_string("client: ", buf);
-				for (uint8_t i = 0; i < dat->size; i++) {
-					if (dat->clients[i].fd != client_fd) {
-						send(dat->clients[i].fd, buf, strlen(buf) + 1, 0);
+				case PACKET_CLIENT_DISCONNECT:
+					{
+						delete_client(dat, client_fd);
+						goto disconnect;
 					}
-				}
+				case PACKET_OK:
+					{
+						struct packet parsed_packet;
+						bool parse_res = parse_packet(packet, size, &parsed_packet);
+						if (!parse_res) {
+							// TODO: packet error happend (not connection error) then send message with error to client
+							log_error("Packet format error");
+							break;
+						}
+						switch (parsed_packet.cmd) {
+							case COMMAND_BROADCAST:
+								prepend_string("client: ", (char*)parsed_packet.payload);
+								for (uint8_t i = 0; i < dat->size; i++) {
+									if (dat->clients[i].fd != client_fd) {
+										send(dat->clients[i].fd, parsed_packet.payload, strlen((char*)parsed_packet.payload) + 1, 0);
+									}
+								}
+								break;
+							default:
+								not_implemented();
+								break;
+						}
+					}
+					break;
 			}
 		}
 	}
+
+disconnect:
+	log_info("Client %s disconnected", ip);
 
 	return false;
 }
@@ -191,11 +231,13 @@ int main(void) {
 		networking_server_update(server, &dat);
 	}
 
-	log_warn("Waiting threads to complete their work");
+	log_warn("Waiting server to shutdown");
 	networking_server_del(server);
 
-	log_info("Gracefully shutting down");
+	log_warn("Closing connections");
 	close_connections(&dat);
+
+	log_info("Gracefully shutting down");
 
 	return 0;
 }
