@@ -151,6 +151,16 @@ static void* poll_server(void* arg) {
 	return NULL;
 }
 
+static bool is_only_spaces(const char* str, size_t len) {
+	for (size_t i = 0; i < len; i++) {
+		if (str[i] != ' ') {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 int main(int argc, char** argv) {
 	if (argc < 2) {
 		die("usage: cchatroom-client address");
@@ -181,6 +191,10 @@ int main(int argc, char** argv) {
 
 		size_t msg_len = strlen(stdin_buf);
 		if (msg_len > 0) {
+			if (is_only_spaces(stdin_buf, msg_len)) {
+				log_error("You entered only spaces. Your message won't be sent.");
+				continue;
+			}
 			if (msg_len > MAX_PAYLOAD_SIZE) {
 				log_error("Too big message");
 			} else {
