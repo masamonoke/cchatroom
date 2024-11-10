@@ -1,12 +1,12 @@
 #include "control.h"
 
+#include <errno.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <signal.h>
-#include <errno.h>
 
 void die_impl(const char* func_name, int line, const char* file, const char* msg, ...) {
-	int err;
+	int     err;
 	va_list args;
 
 	va_start(args, msg);

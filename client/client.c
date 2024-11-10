@@ -1,9 +1,9 @@
 #include "control.h"
-#include "shared.h"
 #include "packet.h"
+#include "shared.h"
 
-#include "networking/io.h"
 #include "clog.h"
+#include "networking/io.h"
 #include "networking/socket.h"
 
 #include <errno.h>
@@ -17,8 +17,8 @@
 
 #define ERASE_LINE "\033[2K\r"
 
-const int MAX_MSG_SIZE = MAX_PAYLOAD_SIZE + 1;
-const int MAX_BUF_SIZE = MAX_MSG_SIZE * 5;
+const int MAX_MSG_SIZE            = MAX_PAYLOAD_SIZE + 1;
+const int MAX_BUF_SIZE            = MAX_MSG_SIZE * 5;
 const int INPUT_WAIT_TIME_MINUTES = 10;
 
 // NOTE: access this variable only through check_running() and set_running() macros
@@ -77,15 +77,15 @@ static bool get_stdin(char* buf, int size) {
 		return false;
 	}
 
-	fd_set set;
-    struct timeval timeout;
+	fd_set         set;
+	struct timeval timeout;
 
-    FD_ZERO(&set);
-    FD_SET(STDIN_FILENO, &set);
+	FD_ZERO(&set);
+	FD_SET(STDIN_FILENO, &set);
 
-	int seconds = INPUT_WAIT_TIME_MINUTES * 60;
-    timeout.tv_sec = seconds;
-    timeout.tv_usec = 0;
+	int seconds     = INPUT_WAIT_TIME_MINUTES * 60;
+	timeout.tv_sec  = seconds;
+	timeout.tv_usec = 0;
 
 	while (keep_running) {
 		print_prefix();
@@ -96,11 +96,12 @@ static bool get_stdin(char* buf, int size) {
 			return false;
 		}
 
-		if(fgets(buf, size, stdin) != NULL) {
+		if (fgets(buf, size, stdin) != NULL) {
 			int len = (int)strlen(buf);
 
 			if (len > MAX_MSG_SIZE) {
-				log_warn("You entered %d characters, that is more than limit: %d. Your message won't be sent", len, MAX_MSG_SIZE);
+				log_warn("You entered %d characters, that is more than limit: %d. Your message won't be sent", len,
+				         MAX_MSG_SIZE);
 				buf[0] = '\0';
 			}
 
@@ -164,9 +165,9 @@ int main(int argc, char** argv) {
 
 	struct pollfd pfd = { .fd = server_fd, .events = POLLIN };
 
-	char stdin_buf[MAX_BUF_SIZE];
+	char     stdin_buf[MAX_BUF_SIZE];
 	uint8_t* packet;
-	uint8_t packet_size;
+	uint8_t  packet_size;
 
 	signal(SIGINT, int_handler);
 	pthread_t poll_thread;

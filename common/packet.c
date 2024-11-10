@@ -1,13 +1,13 @@
 #include "packet.h"
 #include "control.h"
 
-#include "networking/io.h"
 #include "clog.h"
+#include "networking/io.h"
 
-#include <sys/socket.h>
-#include <stdlib.h>
-#include <errno.h>
 #include <assert.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <sys/socket.h>
 
 void send_packet(const uint8_t* packet, uint8_t size, int fd) {
 	send(fd, &size, sizeof(size), 0);
@@ -46,14 +46,12 @@ enum packet_status recv_packet(uint8_t* packet, uint8_t* size, int fd) {
 	return PACKET_OK;
 }
 
-__attribute__((nonnull(1, 2)))
-static void append_data(uint8_t** dest, const void* src, uint8_t size) {
+__attribute__((nonnull(1, 2))) static void append_data(uint8_t** dest, const void* src, uint8_t size) {
 	memcpy(*dest, src, size);
 	*dest += size;
 }
 
-static void build_packet(uint8_t* packet, uint8_t id, uint8_t cmd, uint8_t payload_size,
-                         const uint8_t* payload) {
+static void build_packet(uint8_t* packet, uint8_t id, uint8_t cmd, uint8_t payload_size, const uint8_t* payload) {
 	uint8_t* p = packet;
 
 	append_data(&p, &id, sizeof(id));
@@ -64,21 +62,19 @@ static void build_packet(uint8_t* packet, uint8_t id, uint8_t cmd, uint8_t paylo
 
 uint8_t* make_cmd_packet(cchatroom_cmd_t cmd, const uint8_t* payload, uint8_t payload_size, uint8_t* packet_size_out) {
 	static uint8_t packet[MAX_PACKET_SIZE];
-	static uint8_t  packet_size = 0;
+	static uint8_t packet_size = 0;
 
 	switch (cmd) {
-		case COMMAND_BROADCAST:
-		{
+		case COMMAND_BROADCAST: {
 			// TODO: probably this block is general for all commands
 			// TODO: where to get it?
-			uint8_t id = 1;
+			uint8_t id       = 1;
 			uint8_t msg_size = (uint8_t)(sizeof(id) + sizeof(cmd) + sizeof(payload_size)) + payload_size;
 
 			packet_size = msg_size;
 
 			build_packet(packet, id, cmd, payload_size, payload);
-		}
-		break;
+		} break;
 		default:
 			not_implemented();
 			break;
@@ -94,8 +90,8 @@ static void pop_data(uint8_t* dest, uint8_t** src, size_t size) {
 }
 
 bool parse_packet(uint8_t* packet, uint8_t size, struct packet* out_packet) {
-	uint8_t* p = packet;
-	uint8_t real_size = 0;
+	uint8_t* p         = packet;
+	uint8_t  real_size = 0;
 
 	pop_data(&out_packet->id, &p, sizeof(out_packet->id));
 	pop_data(&out_packet->cmd, &p, sizeof(out_packet->cmd));

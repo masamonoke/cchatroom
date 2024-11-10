@@ -1,9 +1,9 @@
 #include "networking/server.h"
-#include "networking/socket.h"
 #include "clog.h"
-#include "shared.h"
-#include "packet.h"
 #include "control.h"
+#include "networking/socket.h"
+#include "packet.h"
+#include "shared.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -157,8 +157,8 @@ static bool callback(int client_fd, void* data) {
 		}
 
 		if (pfd.revents & POLLIN) {
-			uint8_t packet[MAX_PACKET_SIZE];
-			uint8_t size;
+			uint8_t            packet[MAX_PACKET_SIZE];
+			uint8_t            size;
 			enum packet_status res = recv_packet(packet, &size, client_fd);
 			switch (res) {
 				case PACKET_SIZE_LIMIT_EXCEED:
@@ -167,35 +167,33 @@ static bool callback(int client_fd, void* data) {
 				case PACKET_TRY_AGAIN:
 					log_debug("Some temporary resource shortage happend. Trying to read packet again");
 					continue;
-				case PACKET_CLIENT_DISCONNECT:
-					{
-						delete_client(dat, client_fd);
-						goto disconnect;
+				case PACKET_CLIENT_DISCONNECT: {
+					delete_client(dat, client_fd);
+					goto disconnect;
+				}
+				case PACKET_OK: {
+					struct packet parsed_packet;
+					bool          parse_res = parse_packet(packet, size, &parsed_packet);
+					if (!parse_res) {
+						// TODO: packet error happend (not connection error) then send message with error to client
+						log_error("Packet format error");
+						break;
 					}
-				case PACKET_OK:
-					{
-						struct packet parsed_packet;
-						bool parse_res = parse_packet(packet, size, &parsed_packet);
-						if (!parse_res) {
-							// TODO: packet error happend (not connection error) then send message with error to client
-							log_error("Packet format error");
-							break;
-						}
-						switch (parsed_packet.cmd) {
-							case COMMAND_BROADCAST:
-								prepend_string("client: ", (char*)parsed_packet.payload);
-								for (uint8_t i = 0; i < dat->size; i++) {
-									if (dat->clients[i].fd != client_fd) {
-										send(dat->clients[i].fd, parsed_packet.payload, strlen((char*)parsed_packet.payload) + 1, 0);
-									}
+					switch (parsed_packet.cmd) {
+						case COMMAND_BROADCAST:
+							prepend_string("client: ", (char*)parsed_packet.payload);
+							for (uint8_t i = 0; i < dat->size; i++) {
+								if (dat->clients[i].fd != client_fd) {
+									send(dat->clients[i].fd, parsed_packet.payload,
+									     strlen((char*)parsed_packet.payload) + 1, 0);
 								}
-								break;
-							default:
-								not_implemented();
-								break;
-						}
+							}
+							break;
+						default:
+							not_implemented();
+							break;
 					}
-					break;
+				} break;
 			}
 		}
 	}
