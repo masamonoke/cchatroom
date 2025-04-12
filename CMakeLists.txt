@@ -4,23 +4,23 @@ set(NAME cchatroom)
 project(${NAME})
 
 include_directories(deps/networking/include)
-include_directories(common)
+include_directories(include)
 include_directories(deps/c-logger)
 
 add_subdirectory(deps/networking)
 add_subdirectory(deps/c-logger)
 
 add_executable(cchatroom-client
-	client/client.c
+	src/client.c
 )
 
 add_executable(cchatroom-server
-	server/server.c
+	src/server.c
 )
 
 add_library(cchatroom-common
-	common/control.c
-	common/packet.c
+	src/control.c
+	src/packet.c
 )
 
 target_link_libraries(cchatroom-common c-logger)
