@@ -29,7 +29,6 @@ enum packet_status recv_packet(uint8_t* packet, uint8_t* size, int fd);
 
 // TODO: make packets only once and then reuse them only substituing data or realloc if needed
 // Mallocs memory
-// TODO: does this attr work?
 __attribute__((malloc, nonnull(2, 4)))
 uint8_t* make_cmd_packet(cchatroom_cmd_t cmd, const uint8_t* payload,
         				 uint8_t payload_size, uint8_t* packet_size_out);

@@ -17,9 +17,11 @@
 
 #define ERASE_LINE "\033[2K\r"
 
-const int MAX_MSG_SIZE            = MAX_PAYLOAD_SIZE + 1;
-const int MAX_BUF_SIZE            = MAX_MSG_SIZE * 5;
-const int INPUT_WAIT_TIME_MINUTES = 10;
+static const int MAX_MSG_SIZE            = MAX_PAYLOAD_SIZE + 1;
+static const int MAX_BUF_SIZE            = MAX_MSG_SIZE * 5;
+static const int INPUT_WAIT_TIME_MINUTES = 10;
+static const int POLL_TIMER = 5000;
+static const int SERVER_RESP_BUF_LEN = 100;
 
 // NOTE: access this variable only through check_running() and set_running() macros
 static volatile int keep_running = 1;
@@ -52,16 +54,13 @@ static bool is_disconnected(int client_fd) {
 
 	if (ret == 0) {
 		return true;
-	} else if (ret < 0) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			return false;
-		} else {
-			// some kind of error which might indicate disconnection
-			return true;
-		}
 	}
 
-	return false;
+	if (ret > 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
+		return false;
+	}
+
+	return true;
 }
 
 static void clear_input(void) {
@@ -83,35 +82,33 @@ static bool get_stdin(char* buf, int size) {
 	FD_ZERO(&set);
 	FD_SET(STDIN_FILENO, &set);
 
-	int seconds     = INPUT_WAIT_TIME_MINUTES * 60;
+	static const int minute = 60;
+	int seconds     = INPUT_WAIT_TIME_MINUTES * minute;
 	timeout.tv_sec  = seconds;
 	timeout.tv_usec = 0;
 
-	while (keep_running) {
-		print_prefix();
-		int result = select(STDIN_FILENO + 1, &set, NULL, NULL, &timeout);
+	print_prefix();
+	int result = select(STDIN_FILENO + 1, &set, NULL, NULL, &timeout);
 
-		if (result == 0) {
-			log_warn("You input nothing within %d seconds. The program is closing", seconds);
-			return false;
-		}
-
-		if (fgets(buf, size, stdin) != NULL) {
-			int len = (int)strlen(buf);
-
-			if (len > MAX_MSG_SIZE) {
-				log_warn("You entered %d characters, that is more than limit: %d. Your message won't be sent", len,
-				         MAX_MSG_SIZE);
-				buf[0] = '\0';
-			}
-
-			buf[strlen(buf) - 1] = '\0';
-
-			return true;
-		} else {
-			return false;
-		}
+	if (result == 0) {
+		log_warn("You input nothing within %d seconds. The program is closing", seconds);
+		return false;
 	}
+
+	if (fgets(buf, size, stdin) != NULL) {
+		int len = (int)strlen(buf);
+
+		if (len > MAX_MSG_SIZE) {
+			log_warn("You entered %d characters, that is more than limit: %d. Your message won't be sent", len,
+					 MAX_MSG_SIZE);
+			buf[0] = '\0';
+		}
+
+		buf[strlen(buf) - 1] = '\0';
+
+		return true;
+	}
+
 
 	return false;
 }
@@ -125,11 +122,11 @@ static void print_response(const char* resp) {
 static void* poll_server(void* arg) {
 	struct pollfd* pfd = (struct pollfd*)arg;
 	int            poll_ret;
-	char           server_resp_buf[100];
+	char           server_resp_buf[SERVER_RESP_BUF_LEN];
 
 	while (true) {
 		check_running(false, { break; });
-		poll_ret = poll(pfd, 1, 5000);
+		poll_ret = poll(pfd, 1, POLL_TIMER);
 		if (poll_ret < 0) {
 			log_error("Failed to poll server");
 			break;
@@ -182,6 +179,11 @@ int main(int argc, char** argv) {
 	signal(SIGINT, int_handler);
 	pthread_t poll_thread;
 	pthread_create(&poll_thread, NULL, poll_server, &pfd);
+
+	// TODO:
+	// before loop send handshake then wait for answer handshake
+	// if handshake then send credentials
+	// wait for result if ok then start loop as ususal
 
 	while (keep_running) {
 		if (!get_stdin(stdin_buf, sizeof(stdin_buf))) {

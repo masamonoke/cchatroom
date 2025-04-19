@@ -14,17 +14,20 @@
 
 static volatile bool not_interrupted = true;
 
+static const int MESSAGE_LEN = 10;
+static const int MAX_CLIENTS = 100;
+static const int IP_LEN = 128;
+static const int POLL_TIMER = 5000;
+
 static void int_handler(int dummy) {
 	(void)dummy;
 	not_interrupted = false;
 }
 
-enum constants { MAX_CLIENTS = 100 };
-
 struct user {
 	int         fd;
 	const char* username;
-	const char* msg[10];
+	const char* msg[MESSAGE_LEN];
 };
 
 struct server_data {
@@ -73,13 +76,15 @@ static bool is_disconnected(int client_fd) {
 
 	if (ret == 0) {
 		return true;
-	} else if (ret < 0) {
+	}
+
+	if (ret < 0) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			return false;
-		} else {
-			// some kind of error which might indicate disconnection
-			return true;
 		}
+
+		// some kind of error which might indicate disconnection
+		return true;
 	}
 
 	return false;
@@ -103,18 +108,20 @@ static bool replace_disconnected(struct server_data* dat, int client_fd) {
 }
 
 static bool insert(struct server_data* dat, int client_fd) {
-	if (!is_in(dat, client_fd)) {
-		if (!is_full(dat)) {
-			insert_client(dat, client_fd);
-		} else {
-			if (!replace_disconnected(dat, client_fd)) {
-				// server if full
-				return false;
-			}
-		}
+	if (is_in(dat, client_fd)) {
+		return false;
 	}
 
-	return true;
+	if (!is_full(dat)) {
+		insert_client(dat, client_fd);
+		return true;
+	}
+
+	if (is_full(dat) && replace_disconnected(dat, client_fd)) {
+		return true;
+	}
+
+	return false;
 }
 
 static bool delete_client(struct server_data* dat, int client_fd) {
@@ -139,19 +146,19 @@ static void prepend_string(const char* prefix, char* dst) {
 
 // Returning false means disconnection
 static bool callback(int client_fd, void* data) {
-	struct server_data* dat;
+	struct server_data* server;
 	struct pollfd       pfd = { .fd = client_fd, .events = POLLIN };
 	int                 poll_ret;
 
 	// rename to server
-	dat = (struct server_data*)data;
-	insert(dat, client_fd);
-	char ip[128];
+	server = (struct server_data*)data;
+	insert(server, client_fd);
+	char ip[IP_LEN];
 	networking_socket_get_remote_ip(client_fd, ip);
 	log_info("Got connection from %s", ip);
 
 	while (not_interrupted) {
-		poll_ret = poll(&pfd, 1, 5000);
+		poll_ret = poll(&pfd, 1, POLL_TIMER);
 		if (poll_ret < 0) {
 			break;
 		}
@@ -161,16 +168,19 @@ static bool callback(int client_fd, void* data) {
 			uint8_t            size;
 			enum packet_status res = recv_packet(packet, &size, client_fd);
 			switch (res) {
-				case PACKET_SIZE_LIMIT_EXCEED:
+				case PACKET_SIZE_LIMIT_EXCEED: {
 					log_warn("Client sent too big packet");
 					break;
-				case PACKET_TRY_AGAIN:
+				}
+				case PACKET_TRY_AGAIN: {
 					log_debug("Some temporary resource shortage happend. Trying to read packet again");
 					continue;
+			    }
 				case PACKET_CLIENT_DISCONNECT: {
-					delete_client(dat, client_fd);
+					delete_client(server, client_fd);
 					goto disconnect;
 				}
+				// TODO: extract to separate function
 				case PACKET_OK: {
 					struct packet parsed_packet;
 					bool          parse_res = parse_packet(packet, size, &parsed_packet);
@@ -182,9 +192,9 @@ static bool callback(int client_fd, void* data) {
 					switch (parsed_packet.cmd) {
 						case COMMAND_BROADCAST:
 							prepend_string("client: ", (char*)parsed_packet.payload);
-							for (uint8_t i = 0; i < dat->size; i++) {
-								if (dat->clients[i].fd != client_fd) {
-									send(dat->clients[i].fd, parsed_packet.payload,
+							for (uint8_t i = 0; i < server->size; i++) {
+								if (server->clients[i].fd != client_fd) {
+									send(server->clients[i].fd, parsed_packet.payload,
 									     strlen((char*)parsed_packet.payload) + 1, 0);
 								}
 							}
@@ -193,7 +203,9 @@ static bool callback(int client_fd, void* data) {
 							not_implemented();
 							break;
 					}
-				} break;
+
+					break;
+				}
 			}
 		}
 	}

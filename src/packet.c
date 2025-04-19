@@ -54,6 +54,7 @@ __attribute__((nonnull(1, 2))) static void append_data(uint8_t** dest, const voi
 static void build_packet(uint8_t* packet, uint8_t id, uint8_t cmd, uint8_t payload_size, const uint8_t* payload) {
 	uint8_t* p = packet;
 
+	// TODO: make macro
 	append_data(&p, &id, sizeof(id));
 	append_data(&p, &cmd, sizeof(cmd));
 	append_data(&p, &payload_size, sizeof(payload_size));
@@ -69,6 +70,7 @@ uint8_t* make_cmd_packet(cchatroom_cmd_t cmd, const uint8_t* payload, uint8_t pa
 			// TODO: probably this block is general for all commands
 			// TODO: where to get it?
 			uint8_t id       = 1;
+			// TODO: make macro sumof_sizeofs
 			uint8_t msg_size = (uint8_t)(sizeof(id) + sizeof(cmd) + sizeof(payload_size)) + payload_size;
 
 			packet_size = msg_size;
